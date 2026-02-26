@@ -1,16 +1,12 @@
 """
-بوت تعليمي متكامل مع:
-- اشتراك إجباري في قناة معينة.
-- نظام دعوات (قابل للتعطيل من المدير): كل مستخدم يحتاج دعوة 5 أشخاص لاستخدام البوت.
-- لوحة تحكم للمدير: حظر، إعفاء من الدعوات، تشغيل/إيقاف نظام الدعوات.
-- تخزين كل شيء في قاعدة بيانات SQLite.
-- متوافق مع بايثون 3.10 ومكتبة python-telegram-bot==20.7
+بوت تعليمي متكامل - نسخة مستقرة تماماً
+متوافق مع Python 3.10 و python-telegram-bot==20.7
 """
 
 import logging
 import sqlite3
 import asyncio
-from datetime import datetime
+import sys
 from typing import Dict, List, Optional
 
 from telegram import (
@@ -25,26 +21,27 @@ from telegram.constants import ParseMode
 from telegram.error import TelegramError
 
 # -------------------- الإعدادات الأساسية --------------------
-TOKEN = "8476324781:AAEAqI0VpMqNNMfRihgd-SGnRoTyddcKvGA"
-CHANNEL_ID = -1003091756917          # قناة الفيديوهات الخاصة
-REQUIRED_CHANNEL = "@iIl337"         # قناة الاشتراك الإجباري
-ADMIN_IDS = [6689435577]              # معرف المدير (يمكن إضافة المزيد)
+TOKEN = "8476324781:AAFljUvAT6GYoysL_mvl8rCoADMNXcH1n1g"
+CHANNEL_ID = -1003091756917
+REQUIRED_CHANNEL = "@iIl337"
+ADMIN_IDS = [6689435577]
 
-# حالات ConversationHandler لإضافة كورس جديد
 COURSE_NAME, RECEIVE_VIDEOS = range(2)
 
-# إعداد logging
+# إعداد logging مفصل
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
+# طباعة إصدار بايثون للتأكد
+logger.info(f"🚀 Python version: {sys.version}")
+
 # -------------------- قاعدة البيانات --------------------
 DATABASE = 'courses.db'
 
 def get_db():
-    """إنشاء اتصال بقاعدة البيانات مع مدير السياق."""
     class ConnectionContextManager:
         def __enter__(self):
             self.conn = sqlite3.connect(DATABASE)
@@ -55,10 +52,8 @@ def get_db():
     return ConnectionContextManager()
 
 def init_db():
-    """إنشاء جميع الجداول المطلوبة."""
     with get_db() as conn:
         cursor = conn.cursor()
-        # جدول الكورسات
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS courses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,7 +61,6 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        # جدول الفيديوهات
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS videos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,7 +71,6 @@ def init_db():
                 FOREIGN KEY (course_id) REFERENCES courses (id) ON DELETE CASCADE
             )
         ''')
-        # جدول المستخدمين
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
@@ -92,21 +85,18 @@ def init_db():
                 referrer_id INTEGER
             )
         ''')
-        # جدول الإعدادات العامة
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT
             )
         ''')
-        # إدراج الإعداد الافتراضي إذا لم يكن موجوداً (نظام الدعوات مفعل)
         cursor.execute('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
                        ('invite_system_enabled', 'true'))
         conn.commit()
 
 # -------------------- دوال الإعدادات --------------------
 def get_setting(key: str, default: str = None) -> str:
-    """الحصول على قيمة إعداد معين."""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT value FROM settings WHERE key = ?', (key,))
@@ -114,14 +104,12 @@ def get_setting(key: str, default: str = None) -> str:
         return row['value'] if row else default
 
 def set_setting(key: str, value: str):
-    """تعيين قيمة إعداد."""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('REPLACE INTO settings (key, value) VALUES (?, ?)', (key, value))
         conn.commit()
 
 def is_invite_system_enabled() -> bool:
-    """معرفة ما إذا كان نظام الدعوات مفعّلاً."""
     return get_setting('invite_system_enabled', 'true').lower() == 'true'
 
 # -------------------- دوال المستخدمين --------------------
@@ -138,17 +126,33 @@ def add_or_update_user(user_id: int, username: str = None, first_name: str = Non
             ''', (username, first_name, last_name, user_id))
         else:
             cursor.execute('''
-                INSERT INTO users (user_id, username, first_name, last_name, joined_at)
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO users (user_id, username, first_name, last_name, joined_at, is_subscribed, invites_count, exempt_from_invites, blocked)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, 0, 0, 0, 0)
             ''', (user_id, username, first_name, last_name))
         conn.commit()
 
-def get_user(user_id: int) -> Optional[Dict]:
+def get_user(user_id: int) -> Dict:
+    """إرجاع بيانات المستخدم أو قاموس افتراضي إذا لم يوجد."""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
         row = cursor.fetchone()
-        return dict(row) if row else None
+        if row:
+            return dict(row)
+        else:
+            # إرجاع قاموس بالقيم الافتراضية
+            return {
+                'user_id': user_id,
+                'username': None,
+                'first_name': None,
+                'last_name': None,
+                'joined_at': None,
+                'is_subscribed': 0,
+                'invites_count': 0,
+                'exempt_from_invites': 0,
+                'blocked': 0,
+                'referrer_id': None
+            }
 
 def set_user_blocked(user_id: int, blocked: bool = True):
     with get_db() as conn:
@@ -226,85 +230,90 @@ async def is_user_subscribed(bot, user_id: int, channel: str) -> bool:
         member = await bot.get_chat_member(chat_id=channel, user_id=user_id)
         return member.status not in ['left', 'kicked']
     except TelegramError as e:
-        logger.error(f"Failed to check subscription for {user_id}: {e}")
+        logger.error(f"❌ Subscription check failed for {user_id}: {e}")
         return False
 
-# -------------------- التحقق من صلاحية استخدام البوت --------------------
+# -------------------- التحقق من صلاحية استخدام البوت (مُعاد كتابتها بأمان) --------------------
 async def can_use_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    user_id = update.effective_user.id
-    user = get_user(user_id)
+    """
+    التحقق من شروط استخدام البوت مع معالجة شاملة للأخطاء.
+    """
+    try:
+        user_id = update.effective_user.id
+        user = get_user(user_id)
 
-    # 1. التحقق من الحظر
-    if user and user['blocked']:
-        await update.effective_message.reply_text("⛔ لقد تم حظرك من استخدام البوت.")
-        return False
+        # 1. التحقق من الحظر
+        if user.get('blocked', 0):
+            await update.effective_message.reply_text("⛔ لقد تم حظرك من استخدام البوت.")
+            return False
 
-    # 2. التحقق من الاشتراك في القناة الإجبارية
-    subscribed = await is_user_subscribed(context.bot, user_id, REQUIRED_CHANNEL)
-    if not subscribed:
-        keyboard = [[InlineKeyboardButton("🔗 اشترك الآن", url=f"https://t.me/{REQUIRED_CHANNEL[1:]}")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.effective_message.reply_text(
-            "❗ يجب الاشتراك في القناة أولاً لاستخدام البوت.\n"
-            "بعد الاشتراك، أرسل /start مرة أخرى.",
-            reply_markup=reply_markup
-        )
-        return False
+        # 2. التحقق من الاشتراك في القناة الإجبارية
+        subscribed = await is_user_subscribed(context.bot, user_id, REQUIRED_CHANNEL)
+        if not subscribed:
+            keyboard = [[InlineKeyboardButton("🔗 اشترك الآن", url=f"https://t.me/{REQUIRED_CHANNEL[1:]}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.effective_message.reply_text(
+                "❗ يجب الاشتراك في القناة أولاً لاستخدام البوت.\n"
+                "بعد الاشتراك، أرسل /start مرة أخرى.",
+                reply_markup=reply_markup
+            )
+            return False
 
-    # تحديث حالة الاشتراك في قاعدة البيانات
-    if user and not user['is_subscribed']:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute('UPDATE users SET is_subscribed = 1 WHERE user_id = ?', (user_id,))
-            conn.commit()
-        # إذا كان هذا المستخدم مدعواً، نزيد دعوات الداعي
-        if user and user['referrer_id']:
-            referrer_id = user['referrer_id']
-            referrer = get_user(referrer_id)
-            if referrer and not referrer['blocked']:
-                increment_invites(referrer_id)
-                # إشعار المدير
-                await context.bot.send_message(
-                    chat_id=ADMIN_IDS[0],
-                    text=f"✅ تم اشتراك مدعو جديد!\n"
-                         f"الداعي: {referrer_id}\n"
-                         f"المدعو: {user_id}\n"
-                         f"إجمالي دعوات الداعي الآن: {referrer['invites_count']+1}"
-                )
-                # إشعار الداعي إذا أكمل 5 دعوات
-                if referrer['invites_count'] + 1 >= 5 or referrer['exempt_from_invites']:
-                    await context.bot.send_message(
-                        chat_id=referrer_id,
-                        text="🎉 تهانينا! لقد أكملت دعوة 5 أشخاص وأصبح بإمكانك استخدام البوت بحرية."
-                    )
-    else:
-        # تحديث الاشتراك إذا لم يكن محدثاً
-        if user and not user['is_subscribed']:
+        # تحديث حالة الاشتراك إذا كانت غير محدثة
+        if not user.get('is_subscribed', 0):
             with get_db() as conn:
                 cursor = conn.cursor()
                 cursor.execute('UPDATE users SET is_subscribed = 1 WHERE user_id = ?', (user_id,))
                 conn.commit()
+            # تحديث بيانات المستخدم محلياً
+            user['is_subscribed'] = 1
 
-    # 3. التحقق من نظام الدعوات
-    # إذا كان النظام معطلاً، نسمح للجميع فوراً
-    if not is_invite_system_enabled():
-        return True
+            # إذا كان هذا المستخدم مدعواً، نزيد دعوات الداعي
+            referrer_id = user.get('referrer_id')
+            if referrer_id:
+                referrer = get_user(referrer_id)
+                if not referrer.get('blocked', 0):
+                    increment_invites(referrer_id)
+                    # إشعار المدير
+                    await context.bot.send_message(
+                        chat_id=ADMIN_IDS[0],
+                        text=f"✅ تم اشتراك مدعو جديد!\n"
+                             f"الداعي: {referrer_id}\n"
+                             f"المدعو: {user_id}\n"
+                             f"إجمالي دعوات الداعي الآن: {referrer.get('invites_count', 0) + 1}"
+                    )
+                    # إشعار الداعي إذا أكمل 5 دعوات
+                    if (referrer.get('invites_count', 0) + 1 >= 5) or referrer.get('exempt_from_invites', 0):
+                        await context.bot.send_message(
+                            chat_id=referrer_id,
+                            text="🎉 تهانينا! لقد أكملت دعوة 5 أشخاص وأصبح بإمكانك استخدام البوت بحرية."
+                        )
 
-    # النظام مفعل، نطبق الشروط
-    if user and (user['exempt_from_invites'] or user['invites_count'] >= 5):
-        return True
+        # 3. التحقق من نظام الدعوات
+        if not is_invite_system_enabled():
+            return True
 
-    # المستخدم لم يكمل الدعوات بعد
-    await update.effective_message.reply_text(
-        f"📢 مرحباً! للاستفادة من البوت، يجب عليك دعوة 5 أشخاص للاشتراك في القناة.\n"
-        f"لقد قمت بدعوة {user['invites_count'] if user else 0} أشخاص حتى الآن.\n"
-        f"رابط الدعوة الخاص بك:\n"
-        f"https://t.me/{(await context.bot.get_me()).username}?start=ref_{user_id}\n"
-        f"شارك هذا الرابط مع أصدقائك. عندما يشترك أحدهم عبر الرابط، سيتم احتساب دعوة لك."
-    )
-    return False
+        # إذا كان معفى أو أكمل العدد المطلوب
+        if user.get('exempt_from_invites', 0) or user.get('invites_count', 0) >= 5:
+            return True
 
-# -------------------- معالج /start مع نظام الدعوات --------------------
+        # المستخدم لم يكمل الدعوات بعد
+        bot_username = (await context.bot.get_me()).username
+        await update.effective_message.reply_text(
+            f"📢 مرحباً! للاستفادة من البوت، يجب عليك دعوة 5 أشخاص للاشتراك في القناة.\n"
+            f"لقد قمت بدعوة {user.get('invites_count', 0)} أشخاص حتى الآن.\n"
+            f"رابط الدعوة الخاص بك:\n"
+            f"https://t.me/{bot_username}?start=ref_{user_id}\n"
+            f"شارك هذا الرابط مع أصدقائك. عندما يشترك أحدهم عبر الرابط، سيتم احتساب دعوة لك."
+        )
+        return False
+
+    except Exception as e:
+        logger.error(f"🔥 Critical error in can_use_bot for user {update.effective_user.id}: {e}", exc_info=True)
+        await update.effective_message.reply_text("عذراً، حدث خطأ داخلي. الرجاء المحاولة لاحقاً أو إبلاغ المشرف.")
+        return False
+
+# -------------------- معالج /start --------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     add_or_update_user(user.id, user.username, user.first_name, user.last_name)
@@ -317,7 +326,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             referrer_id = int(referrer_id)
             if referrer_id != user.id:
                 set_referrer(user.id, referrer_id)
-                await update.message.reply_text("تم ربط حسابك بالداعي. أكمل الاشتراك في القناة لتفعيل الدعوة.")
+                await update.message.reply_text("✅ تم ربط حسابك بالداعي. أكمل الاشتراك في القناة لتفعيل الدعوة.")
         except ValueError:
             pass
 
@@ -505,7 +514,6 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ هذا الأمر مخصص للمشرفين فقط.")
         return
 
-    # تحديد نص زر نظام الدعوات حسب الحالة الحالية
     invite_status = "مفعل" if is_invite_system_enabled() else "معطل"
     toggle_button_text = f"🔄 تعطيل نظام الدعوات" if is_invite_system_enabled() else f"🔄 تفعيل نظام الدعوات"
 
@@ -693,18 +701,19 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("اختر أحد الأزرار من القائمة.")
 
-# -------------------- معالجة الأخطاء --------------------
+# -------------------- معالجة الأخطاء العامة --------------------
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.error(msg="Exception while handling an update:", exc_info=context.error)
+    logger.error(msg="🔥 Unhandled exception:", exc_info=context.error)
     try:
         if update and update.effective_message:
-            await update.effective_message.reply_text("عذراً، حدث خطأ غير متوقع. الرجاء المحاولة لاحقاً.")
+            await update.effective_message.reply_text("عذراً، حدث خطأ غير متوقع. تم إبلاغ المشرف.")
     except:
         pass
 
 # -------------------- تشغيل البوت --------------------
 def main():
     init_db()
+    logger.info("✅ Database initialized.")
 
     application = Application.builder().token(TOKEN).build()
 
@@ -740,8 +749,8 @@ def main():
 
     application.add_error_handler(error_handler)
 
-    print("البوت يعمل...")
+    logger.info("🚀 Bot is starting...")
     application.run_polling()
 
 if __name__ == "__main__":
-    main() 
+    main()
