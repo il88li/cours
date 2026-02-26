@@ -539,7 +539,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         if not courses:
             await query.edit_message_text("لا توجد كورسات.")
             return
-        keyboard = [[InlineKeyboardButton(c['name'], callback_data=f"del_{c['id']")] for c in courses]
+        keyboard = [[InlineKeyboardButton(c['name'], callback_data=f"del_{c['id']}")] for c in courses]
         keyboard.append([InlineKeyboardButton("إلغاء", callback_data="admin_cancel")])
         await query.edit_message_text("اختر الكورس للحذف:", reply_markup=InlineKeyboardMarkup(keyboard))
 
