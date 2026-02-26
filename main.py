@@ -16,7 +16,8 @@ from admin import (
     COURSE_NAME, RECEIVE_VIDEOS, ACHIEVEMENT_TYPE, ACHIEVEMENT_CONTENT, ACHIEVEMENT_CAPTION,
     ARTICLE_TITLE, ARTICLE_CONTENT
 )
-from donations import process_stars_amount
+from achievements import show_achievements
+from articles import show_articles
 import asyncio
 
 logging.basicConfig(
@@ -86,9 +87,6 @@ def main():
     # معالجات النصوص
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_text))
-
-    # معالجة الدفع (مجرد رسالة)
-    # لا نحتاج إلى معالج منفصل لأن donate_stars يرسل رسالة توجيه فقط
 
     app.add_error_handler(error_handler)
 
