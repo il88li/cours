@@ -71,6 +71,26 @@ async def show_courses(update: Update, context: ContextTypes.DEFAULT_TYPE, page:
     else:
         await update.effective_message.reply_text("اختر الكورس:", reply_markup=reply_markup)
 
+async def handle_course_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if not await is_user_qualified(update, context):
+        return
+
+    if data.startswith("course_"):
+        course_id = int(data.split("_")[1])
+        context.user_data['current_course'] = course_id
+        context.user_data['video_index'] = 0
+        await show_video(update, context)
+    elif data.startswith("page_"):
+        page = int(data.split("_")[1])
+        await show_courses(update, context, page)
+    elif data == "back_to_main":
+        # سيتم التعامل معها في handlers
+        pass
+
 async def show_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     course_id = context.user_data.get('current_course')
@@ -117,3 +137,20 @@ async def show_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except TelegramError as e:
         logger.error(f"Failed to send video: {e}")
         await query.edit_message_text("حدث خطأ أثناء إرسال الفيديو. حاول مرة أخرى.")
+
+async def navigate_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if not await is_user_qualified(update, context):
+        return
+
+    action = query.data
+    video_index = context.user_data.get('video_index', 0)
+
+    if action == "prev_video":
+        context.user_data['video_index'] = max(0, video_index - 1)
+    elif action == "next_video":
+        context.user_data['video_index'] = video_index + 1
+
+    await show_video(update, context) 
