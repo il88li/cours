@@ -153,4 +153,4 @@ async def navigate_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "next_video":
         context.user_data['video_index'] = video_index + 1
 
-    await show_video(update, context) 
+    await show_video(update, context)
