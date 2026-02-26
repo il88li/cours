@@ -25,7 +25,7 @@ from telegram.constants import ParseMode
 from telegram.error import TelegramError
 
 # -------------------- الإعدادات الأساسية --------------------
-TOKEN = "8476324781:AAFljUvAT6GYoysL_mvl8rCoADMNXcH1n1g"
+TOKEN = "8476324781:AAEAqI0VpMqNNMfRihgd-SGnRoTyddcKvGA"
 CHANNEL_ID = -1003091756917          # قناة الفيديوهات الخاصة
 REQUIRED_CHANNEL = "@iIl337"         # قناة الاشتراك الإجباري
 ADMIN_IDS = [6689435577]              # معرف المدير (يمكن إضافة المزيد)
