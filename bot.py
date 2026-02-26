@@ -4,6 +4,7 @@
 - نظام دعوات (قابل للتعطيل من المدير): كل مستخدم يحتاج دعوة 5 أشخاص لاستخدام البوت.
 - لوحة تحكم للمدير: حظر، إعفاء من الدعوات، تشغيل/إيقاف نظام الدعوات.
 - تخزين كل شيء في قاعدة بيانات SQLite.
+- متوافق مع بايثون 3.10 ومكتبة python-telegram-bot==20.7
 """
 
 import logging
@@ -388,7 +389,6 @@ async def handle_course_selection(update: Update, context: ContextTypes.DEFAULT_
         await show_courses(update, context, page)
     elif data == "main_menu":
         await query.edit_message_text("تم العودة للقائمة الرئيسية.")
-        # يمكن إعادة عرض القائمة الرئيسية عبر إرسال رسالة جديدة (اختياري)
 
 async def show_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -539,7 +539,9 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         if not courses:
             await query.edit_message_text("لا توجد كورسات.")
             return
-        keyboard = [[InlineKeyboardButton(c['name'], callback_data=f"del_{c['id']}")] for c in courses]
+        keyboard = []
+        for course in courses:
+            keyboard.append([InlineKeyboardButton(course['name'], callback_data=f"del_{course['id']}")])
         keyboard.append([InlineKeyboardButton("إلغاء", callback_data="admin_cancel")])
         await query.edit_message_text("اختر الكورس للحذف:", reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -564,7 +566,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         current = is_invite_system_enabled()
         new_value = 'false' if current else 'true'
         set_setting('invite_system_enabled', new_value)
-        status = "مفعل" if not current else "معطل"
+        status = "معطل" if current else "مفعل"
         await query.edit_message_text(f"✅ تم {status} نظام الدعوات.")
 
     elif data == "admin_cancel":
@@ -742,4 +744,4 @@ def main():
     application.run_polling()
 
 if __name__ == "__main__":
-    main()
+    main() 
